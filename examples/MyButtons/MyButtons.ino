@@ -3,6 +3,7 @@
 
 MyButton but1(BUT1,0);
 MyButton but2(17,1);
+MyButton but3(18,1);
 
 ISR (TIMER0_COMPA_vect)
 {
