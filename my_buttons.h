@@ -1,4 +1,4 @@
-//#include <vector>
+
 #define ON_DELAY   40
 #define OFF_DELAY  40
 #define LONG_DELAY  2000
@@ -12,6 +12,13 @@
 #define _M_LONG_    0
 #define _M_RPT_     1
 
+struct ButtonState { 
+//    uint8_t rState:3;   
+    uint8_t mode          :2;
+    uint8_t active        :1;
+    uint8_t waitForRelease:1;
+    uint8_t prev:          1;
+};
 class MyButton;
 
 MyButton * pLastMyButton = NULL;
@@ -32,15 +39,15 @@ class MyButton
   private:
     uint8_t DoDebouncing(uint8_t state);
     uint8_t  m_inputPin;
-    uint8_t  m_active;
-    uint8_t  m_rptMode; // 0 - SHORT by release, LONG by timeout;
+ //   uint8_t  m_active;
+ //   uint8_t  m_rptMode; // 0 - SHORT by release, LONG by timeout; /1 - SHORT by push then RPT if hold pushing
     uint8_t  m_onDelay; //debouncing delays
     uint8_t  m_offDelay;
     uint8_t  m_onTimer;  //debouncing timers
     uint8_t  m_offTimer;
-    uint8_t  m_prev;    //prev states; 1- On; 0 -Off
-    uint8_t  m_waitForRelease;
-
+//    uint8_t  m_prev;    //prev states; 1- On; 0 -Off
+//    uint8_t  m_waitForRelease;
+    struct ButtonState m_state; 
     volatile uint8_t  m_usrState;  //State for user, reset when read
     uint16_t m_holdTime;  //pushed state counter
 
@@ -49,10 +56,14 @@ class MyButton
 };
 
 MyButton:: MyButton(uint8_t pin, uint8_t rptMode, uint8_t active , uint8_t onDelay,  uint8_t offDelay):
-  m_inputPin(pin), m_active(active), m_rptMode(rptMode), m_onDelay(onDelay), m_offDelay(offDelay),
-  m_onTimer(0), m_offTimer(0), m_prev(0), m_waitForRelease(0)
+  m_inputPin(pin),  m_onDelay(onDelay), m_offDelay(offDelay),
+  m_onTimer(0), m_offTimer(0)
 
 {
+  m_state.mode = rptMode;
+  m_state.active = active;
+  m_state.waitForRelease=0;
+  m_state.prev = 0;
   m_prevButt = pLastMyButton;
   pLastMyButton = this;
   if (active == LOW)
@@ -71,13 +82,13 @@ uint8_t  MyButton::DoDebouncing(uint8_t state)
   {
     if (--m_offTimer) return 0; //еще не истекла задержка после отпускания,считаем отпущеной
   }
-  if (state != m_prev) // cocстояние изменилось
+  if (state != m_state.prev) // cocстояние изменилось
   {
     if (state)
       m_onTimer = m_onDelay;
     else
       m_offTimer = m_offDelay;
-    m_prev = state;
+    m_state.prev = state;
   }
   return state;
 }
@@ -87,22 +98,22 @@ uint8_t MyButton::DoButton (uint8_t state)
 
   state = DoDebouncing(state);
   // Serial.print((String) "S=" + state + " mode " + m_rptMode);
-  if (m_rptMode == _M_LONG_) {
+  if (m_state.mode == _M_LONG_) {
     //  Serial.print(" long ");
-    if (state && !m_waitForRelease)
+    if (state && !m_state.waitForRelease)
     { // нажата
       ++(m_holdTime);
       if (m_holdTime >= LONG_DELAY)
       {
         //нажата уже долго
-        m_waitForRelease = 1;
+        m_state.waitForRelease = 1;
         m_usrState = _BTN_LONG_ ;
         return m_usrState ;
       }
     }
     //отпущена
     if (state == 0) {
-      m_waitForRelease = 0;
+      m_state.waitForRelease = 0;
       if (m_holdTime && m_holdTime < LONG_DELAY)
       { // короткое нажатие.
         m_usrState = _BTN_SHORT_ ;
@@ -110,11 +121,11 @@ uint8_t MyButton::DoButton (uint8_t state)
       m_holdTime = 0;
     }
   }
-  if (m_rptMode == _M_RPT_) {
+  if (m_state.mode == _M_RPT_) {
     if (state) { //pushed
-      if (!m_waitForRelease) //just recently
+      if (!m_state.waitForRelease) //just recently
       {
-        m_waitForRelease = 1;
+        m_state.waitForRelease = 1;
         m_usrState = _BTN_SHORT_;
       } else {
         ++(m_holdTime);
@@ -126,7 +137,7 @@ uint8_t MyButton::DoButton (uint8_t state)
       }
     } else //released
     {
-      m_waitForRelease = 0;
+      m_state.waitForRelease = 0;
       m_holdTime = 0;
       //    m_usrState = 0;
     }
@@ -136,7 +147,7 @@ uint8_t MyButton::DoButton (uint8_t state)
 
 uint8_t MyButton::DoButton ()
 {
-  uint8_t ret = DoButton(digitalRead(m_inputPin) == m_active);
+  uint8_t ret = DoButton(digitalRead(m_inputPin) == m_state.active);
   //  Serial.println((String) "  ret" + ret);
   return  ret;
 }
